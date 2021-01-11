@@ -1,0 +1,89 @@
+Resources:
+    BatchServiceRole:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - batch.amazonaws.com
+            Action:
+            - sts:AssumeRole
+        ManagedPolicyArns:
+          - arn:aws:iam::aws:policy/service-role/AWSBatchServiceRole
+    ecsInstanceRole:
+      Type: AWS::IAM::Role
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - ec2.amazonaws.com
+            Action:
+            - sts:AssumeRole
+        ManagedPolicyArns:
+          - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+        Path: "/"
+        Policies:
+          - PolicyName: ecs_batch_policy
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                  - Effect: Allow
+                    Action:
+                      - s3:*
+                    Resource:
+                      - "*"
+    ecsInstanceProfile:
+      Type: AWS::IAM::InstanceProfile
+      Properties:
+        Roles:
+          - !Ref ecsInstanceRole
+    SlsComputeEnv:
+      Type: AWS::Batch::ComputeEnvironment
+      Properties:
+        Type: MANAGED
+        ServiceRole: !GetAtt BatchServiceRole.Arn
+        ComputeEnvironmentName: ${self:custom.batch.compute_env}
+        ComputeResources:
+          MaxvCpus: 32
+          MinvCpus: 0
+          SecurityGroupIds: 
+            - <security-group>
+          Ec2KeyPair: myPem
+          InstanceRole: !GetAtt ecsInstanceProfile.Arn
+          Subnets:
+            - <subnet>
+          Type: EC2
+          Tags:
+            Name: ${self:custom.batch.compute_env}
+            Service: ${self:service}
+            Stage: ${self:custom.STAGE}
+          InstanceTypes:
+            - p3.2xlarge
+        State: ENABLED
+    SlsJobQueue:
+      Type: AWS::Batch::JobQueue
+      Properties:
+        JobQueueName: ${self:custom.batch.job_queue}
+        ComputeEnvironmentOrder:
+          - Order: 1
+            ComputeEnvironment: !Ref SlsComputeEnv
+        State: ENABLED
+        Priority: 1
+    SlsJobDefinition:
+      Type: AWS::Batch::JobDefinition
+      Properties:
+        Type: container
+        JobDefinitionName: ${self:custom.batch.job_definition}
+        ContainerProperties:
+          ResourceRequirements:
+            - Type: "GPU"
+              Value: "1"
+          Memory: 12288
+          Vcpus: 7
+          Image: "#{AWS::AccountId}.dkr.ecr.#{AWS::Region}.amazonaws.com/bert-${self:custom.STAGE}:latest"

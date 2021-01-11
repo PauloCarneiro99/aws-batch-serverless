@@ -1,0 +1,60 @@
+service: first-batch-job
+
+provider:
+  name: aws
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - "batch:*"
+      Resource: "*"
+
+custom:
+  STAGE: ${opt:stage, 'dev'}
+
+  pythonRequirements:
+    usePoetry: false
+    dockerizePip: "non-linux"
+    slim: true
+    useDownloadCache: true
+    useStaticCache: true
+    cacheLocation: ${opt:pipcachepath}
+    staticCacheMaxVersions: 10
+
+  batch:
+    compute_env: ${self:service}-compute-env-${self:custom.STAGE}
+    job_queue: ${self:service}-job-queue-${self:custom.STAGE}
+    job_definition: ${self:service}-job-definition-${self:custom.STAGE}
+
+
+plugins:
+    - serverless-pseudo-params
+    - serverless-python-requirements
+
+package:
+  excludeDevDependencies: false
+  exclude:
+    - venv/**
+    - .venv/**
+    - __pycache__/**
+    - .gitignore
+    - node_modules/**
+    - .npm-cache/**
+    - .virtualenv/**
+    - .cache/**
+
+
+resources:
+    - ${file(resources/batch.yml)}
+
+functions:
+  ignition:
+    handler: ignition/script.ignition
+    timeout: 128
+    memorySize: 384
+    reservedConcurrency: 1
+    environment:
+      BATCH_JOB_QUEUE_NAME: ${self:custom.batch.job_queue}
+      BATCH_JOB_DEFINITION: ${self:custom.batch.job_definition}
+      region: "#{AWS::Region}"
+      account_id: "#{AWS::AccountId}"
+      stage: ${self:custom.STAGE}
